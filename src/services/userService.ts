@@ -279,31 +279,99 @@ class UserService {
 
   public async loginWithEmail(email: string, _pass: string): Promise<UserProfile> {
     const users = this.getAllUsers();
-    const existing = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-    if (existing) {
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, existing.id);
-      this.currentUser = existing;
-      this.notify();
-      return existing;
+    const existing = users.find((u) => u.email.toLowerCase() === email.trim().toLowerCase());
+    if (!existing) {
+      throw new Error('Аккаунт с таким email не найден. Пройдите регистрацию.');
     }
-    // Create new profile for this email
+    localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, existing.id);
+    this.currentUser = existing;
+    this.notify();
+    return existing;
+  }
+
+  public async register(params: {
+    email: string;
+    username: string;
+    password: string;
+    telegram_username?: string;
+  }): Promise<UserProfile> {
+    const email = params.email.trim();
+    const username = params.username.trim();
+    const telegram_username = params.telegram_username?.trim();
+
+    if (!email || !username || !params.password) {
+      throw new Error('Заполните все обязательные поля');
+    }
+
+    const users = this.getAllUsers();
+    if (users.some((u) => u.email.toLowerCase() === email.toLowerCase())) {
+      throw new Error('Пользователь с таким email уже зарегистрирован');
+    }
+
+    if (users.some((u) => u.username.toLowerCase() === username.toLowerCase())) {
+      throw new Error('Пользователь с таким никнеймом уже зарегистрирован');
+    }
+
     const newUser: UserProfile = {
       id: `usr_${Date.now()}`,
       email,
-      username: email.split('@')[0],
-      balance: 500, // Welcome bonus
+      username,
+      telegram_username: telegram_username
+        ? (telegram_username.startsWith('@') ? telegram_username : `@${telegram_username}`)
+        : undefined,
+      balance: 0, // Без бонуса
       role: 'user',
       two_factor_enabled: false,
-      email_verified: true,
+      email_verified: false,
       is_frozen: false,
       ip_whitelist_enabled: false,
       whitelisted_ips: [],
       created_at: new Date().toISOString(),
-      last_login_ip: '127.0.0.1',
+      last_login_ip: '178.62.204.18',
       last_login_at: new Date().toISOString(),
     };
+
     users.push(newUser);
     this.saveUsers(users);
+
+    // Create session
+    try {
+      const rawSessions = localStorage.getItem(STORAGE_KEYS.SESSIONS);
+      const sessions = rawSessions ? JSON.parse(rawSessions) : [];
+      sessions.unshift({
+        id: `sess_${Date.now()}`,
+        user_id: newUser.id,
+        device: 'Windows 11 PC (Web Browser)',
+        browser: 'Browser Session',
+        ip: '178.62.204.18',
+        location: 'Moscow, Russian Federation',
+        last_active: 'Активна сейчас',
+        is_current: true,
+      });
+      localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(sessions));
+    } catch (e) {
+      console.warn('Could not store session', e);
+    }
+
+    // Audit log
+    try {
+      const rawAudit = localStorage.getItem(STORAGE_KEYS.LOGIN_AUDIT);
+      const audit = rawAudit ? JSON.parse(rawAudit) : [];
+      audit.unshift({
+        id: `aud_${Date.now()}`,
+        user_id: newUser.id,
+        ip: '178.62.204.18',
+        device: 'Windows 11 PC',
+        browser: 'Browser Session',
+        location: 'Moscow, Russia',
+        status: 'success',
+        timestamp: new Date().toISOString(),
+      });
+      localStorage.setItem(STORAGE_KEYS.LOGIN_AUDIT, JSON.stringify(audit));
+    } catch (e) {
+      console.warn('Could not store audit', e);
+    }
+
     localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, newUser.id);
     this.currentUser = newUser;
     this.notify();

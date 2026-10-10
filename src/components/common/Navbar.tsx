@@ -13,6 +13,7 @@ import {
   KeyRound, 
   Layers,
   User,
+  UserPlus,
   Wallet
 } from 'lucide-react';
 import { ServiceStatusConfig } from '../../types/license';
@@ -38,6 +39,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [soundActive, setSoundActive] = useState(soundService.isEnabled());
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(userService.getCurrentUser());
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalAction, setAuthModalAction] = useState<'login' | 'register'>('login');
 
   React.useEffect(() => {
     return userService.subscribe((u) => {
@@ -237,16 +239,31 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               </div>
             ) : (
-              <button
-                onClick={() => {
-                  soundService.playTone('click');
-                  setAuthModalOpen(true);
-                }}
-                className="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-semibold text-slate-200 hover:text-white transition-all flex items-center gap-1.5"
-              >
-                <User className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Личный кабинет</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    soundService.playTone('click');
+                    setAuthModalAction('login');
+                    setAuthModalOpen(true);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-semibold text-slate-200 hover:text-white transition-all flex items-center gap-1.5"
+                >
+                  <User className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Войти</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    soundService.playTone('click');
+                    setAuthModalAction('register');
+                    setAuthModalOpen(true);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/30 hover:to-blue-500/30 border border-cyan-500/40 text-xs font-semibold text-cyan-300 hover:text-white transition-all flex items-center gap-1.5 shadow-[0_0_15px_rgba(6,182,212,0.15)]"
+                >
+                  <UserPlus className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Регистрация</span>
+                </button>
+              </div>
             )}
 
             {/* Admin Switcher */}
@@ -356,17 +373,32 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span>Личный кабинет ({currentUser.balance.toLocaleString('ru-RU')} ₽)</span>
               </button>
             ) : (
-              <button
-                onClick={() => {
-                  soundService.playTone('click');
-                  setMobileMenuOpen(false);
-                  setAuthModalOpen(true);
-                }}
-                className="w-full py-2.5 rounded-xl bg-white/10 border border-white/20 text-center text-xs font-semibold text-white flex items-center justify-center gap-2"
-              >
-                <User className="w-4 h-4 text-cyan-400" />
-                <span>Войти в Личный кабинет</span>
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    soundService.playTone('click');
+                    setMobileMenuOpen(false);
+                    setAuthModalAction('login');
+                    setAuthModalOpen(true);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-white/10 border border-white/20 text-center text-xs font-semibold text-white flex items-center justify-center gap-1.5"
+                >
+                  <User className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Войти</span>
+                </button>
+                <button
+                  onClick={() => {
+                    soundService.playTone('click');
+                    setMobileMenuOpen(false);
+                    setAuthModalAction('register');
+                    setAuthModalOpen(true);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-center text-xs font-semibold text-cyan-300 flex items-center justify-center gap-1.5"
+                >
+                  <UserPlus className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Регистрация</span>
+                </button>
+              </div>
             )}
 
             {currentView === 'storefront' ? (
@@ -403,6 +435,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* Auth Modal for Guests */}
       <AuthModal
         isOpen={authModalOpen}
+        initialAction={authModalAction}
         onClose={() => setAuthModalOpen(false)}
         onSuccess={() => onNavigate('cabinet')}
       />
