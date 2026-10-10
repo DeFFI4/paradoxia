@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Mail,
@@ -29,6 +30,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
   const [licenseKey, setLicenseKey] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        soundService.playTone('click');
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -95,9 +116,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-md overflow-hidden rounded-2xl bg-gradient-to-b from-[#0f121d] to-[#07090f] border border-cyan-500/20 shadow-[0_0_50px_rgba(6,182,212,0.15)]">
+  const modalContent = (
+    <div 
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 overflow-y-auto bg-black/80 backdrop-blur-md animate-fadeIn"
+      onClick={() => {
+        soundService.playTone('click');
+        onClose();
+      }}
+    >
+      <div 
+        className="relative w-full max-w-md my-auto overflow-hidden rounded-2xl bg-gradient-to-b from-[#0f121d] to-[#07090f] border border-cyan-500/20 shadow-[0_0_50px_rgba(6,182,212,0.15)] flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Neon Top Accent Line */}
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-500 via-violet-500 to-cyan-500" />
 
@@ -298,4 +328,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined'
+    ? createPortal(modalContent, document.body)
+    : modalContent;
 };

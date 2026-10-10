@@ -103,8 +103,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full backdrop-blur-2xl bg-cosmic-950/75 border-b border-white/[0.08] transition-all duration-300">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <>
+      <header className="sticky top-0 z-50 w-full backdrop-blur-2xl bg-cosmic-950/75 border-b border-white/[0.08] transition-all duration-300">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 sm:h-20">
           {/* Logo & Brand */}
           <div className="flex items-center gap-6">
@@ -397,12 +398,14 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       )}
 
+      </header>
+      
       {/* Auth Modal for Guests */}
       <AuthModal
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
         onSuccess={() => onNavigate('cabinet')}
       />
-    </header>
+    </>
   );
 };
