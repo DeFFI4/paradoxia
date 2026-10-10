@@ -14,11 +14,13 @@ import { soundService } from '../../services/soundService';
 interface StorefrontViewProps {
   statusConfig: ServiceStatusConfig | null;
   onNavigateAdmin: () => void;
+  onNavigateCabinet?: () => void;
 }
 
 export const StorefrontView: React.FC<StorefrontViewProps> = ({
   statusConfig,
   onNavigateAdmin,
+  onNavigateCabinet,
 }) => {
   const [purchaseModalOpen, setPurchaseModalOpen] = useState(false);
   const [selectedTier, setSelectedTier] = useState<PricingTier | null>(null);
@@ -65,6 +67,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
         currentView="storefront"
         onNavigate={(view) => {
           if (view === 'admin') onNavigateAdmin();
+          else if (view === 'cabinet' && onNavigateCabinet) onNavigateCabinet();
         }}
         onOpenKeyChecker={handleOpenKeyChecker}
       />
