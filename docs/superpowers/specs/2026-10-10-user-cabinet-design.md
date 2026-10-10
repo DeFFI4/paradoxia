@@ -11,18 +11,26 @@ The personal cabinet enables users to:
    - **Смена пароля (Change Password)**: Запрос изменения пароля -> подтверждение по криптографической ссылке на почту -> установка нового пароля.
    - **Привязка/отвязка Telegram**: Привязка Telegram-аккаунта (@username / Chat ID) для уведомлений -> валидация через ссылку на почту.
    - **Экстренное завершение всех сессий (Panic Button / Revoke All Sessions)**: Отзыв всех авторизованных сессий и токенов на других устройствах при подтверждении по почте.
+   - **Экстренная заморозка профиля (Panic Freeze)**: Моментальная блокировка всех операций по аккаунту при подозрении на взлом -> разблокировка только по ссылке на почту.
+   - **Генерация резервных кодов (Backup Recovery Codes)**: Создание одноразовых 8-значных кодов восстановления доступа -> подтверждение по ссылке на почту.
+   - **Белый список IP (IP Whitelist)**: Ограничение доступа к аккаунту только с разрешенных IP-адресов -> добавление/удаление IP через подтверждение по ссылке.
+   - **Лог аудита входов (Login Security Audit)**: Детальная история входов (IP, гео, браузер/ОС, статус "Успешно"/"Заблокировано") для выявления подозрительной активности.
    - **Экстренный сброс HWID (Emergency HWID Reset)**: Сброс привязки железа в обход обычного 7-дневного кулдауна через ссылку безопасности на почту.
    - **Двухфакторная аутентификация (2FA)**: Включение и отключение 2FA для входа в кабинет через ссылку подтверждения.
    - **Удаление аккаунта (Delete Account / GDPR)**: Полная деактивация и удаление профиля и данных только после явного подтверждения по почте.
-5. **Interactive Email Dispatcher ("Cyberpunk Email Dispatcher Modal")**:
+5. **Wallet & Promo System**:
+   - Пополнение баланса (пресеты 250₽, 500₽, 1000₽, 2500₽ и произвольная сумма).
+   - Активация промокодов и подарочных ваучеров (например, `PARADOXIA2026`, `WELCOME100`, `BOOST500`).
+   - Автопродление активных подписок с баланса кошелька (переключатель автопродления с проверкой достаточного баланса).
+6. **Interactive Email Dispatcher ("Cyberpunk Email Dispatcher Modal")**:
    - Специальное интерактивное окно эмулятора почтового сервиса безопасности прямо в UI: отображает тему письма, маскированный адрес, одноразовый защитный токен с таймером жизни 15 минут, кнопку перехода по ссылке и возможность перехода через URL-параметр `?security_token=...`.
-6. **Software Distribution**: Защищенная загрузка актуального лоадера (`ParadoxiaLoader_v2.4.exe`) с генерацией динамического одноразового токена запуска и пошаговой инструкцией.
-7. **Authentication & Identity**: Вход по Email/паролю, моментальный вход по ключу лицензии (PDX Key), и 1-клик демонстрационный доступ.
+7. **Software Distribution**: Защищенная загрузка актуального лоадера (`ParadoxiaLoader_v2.4.exe`) с генерацией динамического одноразового токена запуска и пошаговой инструкцией.
+8. **Authentication & Identity**: Вход по Email/паролю, моментальный вход по ключу лицензии (PDX Key), и 1-клик демонстрационный доступ.
 
 ---
 
 ## 2. Visual & Interaction Standards
-- **Strict Vector Icons**: Исключительно иконки `lucide-react` (`User`, `Wallet`, `KeyRound`, `Cpu`, `Clock`, `ShieldCheck`, `ShieldAlert`, `Download`, `RefreshCw`, `ArrowUpRight`, `Lock`, `Snowflake`, `PlusCircle`, `LogOut`, `Mail`, `Send`, `Smartphone`, `CheckCircle2`, `AlertCircle`, `Trash2`, `ExternalLink`, etc.). Строго **0 эмодзи** в интерфейсе.
+- **Strict Vector Icons**: Исключительно иконки `lucide-react` (`User`, `Wallet`, `KeyRound`, `Cpu`, `Clock`, `ShieldCheck`, `ShieldAlert`, `Download`, `RefreshCw`, `ArrowUpRight`, `Lock`, `Snowflake`, `PlusCircle`, `LogOut`, `Mail`, `Send`, `Smartphone`, `CheckCircle2`, `AlertCircle`, `Trash2`, `ExternalLink`, `Ticket`, `Terminal`, `Globe`, etc.). Строго **0 эмодзи** в интерфейсе.
 - **Aesthetic**:
   - Cosmic Obsidian background (`#060609` / `bg-cosmic-950`).
   - Frosted liquid glass card modules (`backdrop-blur-2xl`, `bg-white/[0.03]`, `border border-white/10`).
@@ -45,13 +53,17 @@ export interface UserProfile {
   telegram_id?: string | null;
   two_factor_enabled: boolean;
   email_verified: boolean;
+  is_frozen: boolean; // Panic Freeze state
+  ip_whitelist_enabled: boolean;
+  whitelisted_ips: string[];
+  backup_codes?: string[];
   created_at: string;
   avatar_url?: string;
   last_login_ip?: string;
   last_login_at?: string;
 }
 
-export type TransactionType = 'topup' | 'purchase' | 'extend' | 'hwid_reset_fee';
+export type TransactionType = 'topup' | 'purchase' | 'extend' | 'hwid_reset_fee' | 'voucher_redeem';
 
 export interface WalletTransaction {
   id: string;
@@ -69,6 +81,7 @@ export interface UserSubscription {
   product_name: string;
   duration_days: number;
   status: 'active' | 'frozen' | 'expired';
+  auto_renew: boolean; // Auto-renewal from wallet balance
   activated_at: string;
   expires_at: string;
   hwid: string | null;
@@ -89,12 +102,27 @@ export interface UserSession {
   is_current: boolean;
 }
 
+export interface LoginAuditRecord {
+  id: string;
+  user_id: string;
+  ip: string;
+  device: string;
+  browser: string;
+  location: string;
+  status: 'success' | 'blocked_ip' | 'failed_2fa' | 'frozen_account';
+  timestamp: string;
+}
+
 export type SecurityActionType =
   | 'change_email'
   | 'change_password'
   | 'bind_telegram'
   | 'unbind_telegram'
   | 'revoke_all_sessions'
+  | 'panic_freeze_account'
+  | 'unfreeze_account'
+  | 'generate_backup_codes'
+  | 'update_ip_whitelist'
   | 'emergency_hwid_reset'
   | 'toggle_2fa'
   | 'delete_account';
@@ -121,7 +149,9 @@ export interface SecurityActionRequest {
   - `logout(): void`
 - **Wallet & Balance**:
   - `topUpBalance(userId: string, amount: number, method: string): Promise<WalletTransaction>`
+  - `redeemVoucher(userId: string, code: string): Promise<{ success: boolean; amount: number; message: string }>`
   - `renewSubscription(userId: string, licenseId: string, days: number, cost: number): Promise<boolean>`
+  - `toggleAutoRenew(userId: string, licenseId: string): Promise<boolean>`
   - `getTransactionHistory(userId: string): Promise<WalletTransaction[]>`
 - **Subscriptions & HWID**:
   - `getUserSubscriptions(userId: string): Promise<UserSubscription[]>`
@@ -133,10 +163,11 @@ export interface SecurityActionRequest {
   - `confirmSecurityAction(token: string): Promise<{ success: boolean; message: string }>`
   - `getUserSessions(userId: string): UserSession[]`
   - `revokeSession(userId: string, sessionId: string): Promise<boolean>`
+  - `getLoginAudit(userId: string): LoginAuditRecord[]`
 
 Persistence:
 1. Supabase таблицы (`user_profiles`, `user_transactions`, `user_security_tokens`) при подключении ключей.
-2. `localStorage` fallback (`pdx_user_profiles`, `pdx_user_session`, `pdx_user_transactions`, `pdx_security_actions`) со стартовыми демо-данными для надежной автономной работы без сторонних зависимостей.
+2. `localStorage` fallback (`pdx_user_profiles`, `pdx_user_session`, `pdx_user_transactions`, `pdx_security_actions`, `pdx_login_audit`) со стартовыми демо-данными для надежной автономной работы без сторонних зависимостей.
 
 ---
 
@@ -146,27 +177,30 @@ Persistence:
 src/components/cabinet/
 ├── UserCabinetView.tsx         # Главный контейнер ЛК с навигацией по вкладкам и виджетом профиля
 ├── OverviewTab.tsx             # Сводка: статус подписки, таймер, быстрый баланс, кнопка скачивания лоадера
-├── SubscriptionsTab.tsx        # Детальный список подписок, продление с баланса со скидкой, заморозка
-├── HwidManagerTab.tsx          # Статус HWID, таймер кулдауна, сброс (стандартный и экстренный)
-├── WalletTab.tsx               # Управление балансом, история транзакций, пресеты пополнения
-├── SecuritySettingsTab.tsx     # Центр безопасности: почта, пароль, Telegram, 2FA, сессии, Panic button, удаление
+├── SubscriptionsTab.tsx        # Детальный список подписок, продление с баланса, заморозка, тумблер автопродления
+├── HwidManagerTab.tsx          # Статус HWID, таймер кулдауна, сброс (стандартный и экстренный через почту)
+├── WalletTab.tsx               # Управление балансом, ввод промокодов/ваучеров, история транзакций
+├── SecuritySettingsTab.tsx     # Центр безопасности: почта, пароль, Telegram, 2FA, Backup codes, Panic Freeze, IP Whitelist, аудит сессий
 ├── TopUpModal.tsx              # Модальное окно пополнения баланса (пресеты 250₽, 500₽, 1000₽, 2500₽, кастом)
 ├── EmailDispatcherModal.tsx    # Cyberpunk Mail Simulator: интерактивное окно защитного письма со ссылкой и токеном
 └── AuthModal.tsx               # Модальное окно авторизации (Email/Пароль, Direct Key, 1-Click Demo)
 ```
 
 ### 4.1 Вкладки Личного Кабинета
-1. **Обзор (Overview)**: Баланс кошелька, активный продукт с таймером окончания, статус HWID, быстрое скачивание лоадера с генерацией токена, уровень безопасности аккаунта.
-2. **Подписки (Subscriptions)**: Все активированные ключи, оставшееся время, кнопка «Продлить со скидкой с баланса», кнопка заморозки/разморозки.
+1. **Обзор (Overview)**: Баланс кошелька, активный продукт с таймером окончания, статус HWID, быстрое скачивание лоадера с генерацией токена, индикатор защищенности профиля (Security Score).
+2. **Подписки (Subscriptions)**: Все активированные ключи, оставшееся время, кнопка «Продлить со скидкой с баланса», переключатель «Автопродление с баланса», кнопка заморозки/разморозки.
 3. **Управление HWID**: Текущий хэш привязки, статус валидации, 7-дневный кулдаун, кнопка безопасного сброса + кнопка «Экстренный сброс через подтверждение по почте».
-4. **Кошелек (Wallet)**: Баланс, быстрые кнопки пополнения, детальная таблица истории транзакций со статусами и фильтрацией.
+4. **Кошелек (Wallet)**: Баланс, быстрые кнопки пополнения, блок активации промокода / ваучера (`PARADOXIA2026`), детальная таблица истории транзакций со статусами и фильтрацией.
 5. **Безопасность (Security & Settings)**:
-   - Смена почты (ввод нового адреса -> письмо со ссылкой на старую почту)
-   - Смена пароля (запрос смены -> ссылка безопасности на почту -> форма нового пароля)
-   - Telegram связка (ввод юзернейма -> подтверждение ссылки на почту -> статус привязан)
-   - Двухфакторная защита (2FA переключатель -> подтверждение по почте)
-   - Активные сессии (IP, геолокация, браузер, кнопка «Экстренно завершить все сессии» через почту)
-   - Удаление аккаунта (подтверждение через почту)
+   - **Смена почты**: Ввод нового адреса -> письмо со ссылкой на старую почту -> валидация.
+   - **Смена пароля**: Запрос смены -> ссылка безопасности на почту -> форма нового пароля.
+   - **Привязка Telegram**: Ввод @username -> подтверждение ссылки на почту -> статус привязан.
+   - **Двухфакторная защита (2FA)**: Переключатель 2FA -> подтверждение по почте.
+   - **Резервные коды (Backup Codes)**: Генерация 8-значных одноразовых кодов -> подтверждение по почте.
+   - **Panic Freeze (Экстренная заморозка)**: Блокировка всех действий аккаунта -> разморозка только через ссылку на почту.
+   - **Белый список IP (IP Whitelist)**: Разрешенные IP-адреса -> изменение через ссылку на почту.
+   - **Лог аудита входов & Активные сессии**: Детальный лог входов с IP/гео/статусом и кнопка «Экстренно завершить все сессии» через почту.
+   - **Удаление аккаунта**: Запрос безвозвратного удаления -> подтверждение по почте.
 
 ### 4.2 Интеграция с общим приложением
 - **`App.tsx`**: Добавление view `'cabinet'` в роутинг. Проверка параметра URL `?security_token=...` при старте для моментального подтверждения защитных действий.
