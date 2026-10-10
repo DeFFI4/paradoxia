@@ -46,7 +46,7 @@ src/
 
 ## Tasks Breakdown
 
-### Task 1: Type Definitions (`src/types/user.ts`)
+### [x] Task 1: Type Definitions (`src/types/user.ts`)
 - **File**: `src/types/user.ts`
 - **Actions**:
   1. Define `UserProfile`: `id`, `email`, `username`, `balance`, `role`, `telegram_username`, `telegram_id`, `two_factor_enabled`, `email_verified`, `is_frozen`, `ip_whitelist_enabled`, `whitelisted_ips`, `backup_codes`, `created_at`, `avatar_url`, `last_login_ip`, `last_login_at`.
@@ -59,7 +59,7 @@ src/
 
 ---
 
-### Task 2: Service Layer (`src/services/userService.ts`)
+### [x] Task 2: Service Layer (`src/services/userService.ts`)
 - **File**: `src/services/userService.ts`
 - **Actions**:
   1. Initialize persistent storage in `localStorage` with demo seed data (Demo user `demo@paradoxia.space`, active 30-day CS2 Private key, 1450₽ balance, mock sessions, mock login audit).
@@ -73,7 +73,7 @@ src/
 
 ---
 
-### Task 3: Interactive Security Email Simulator (`src/components/cabinet/EmailDispatcherModal.tsx`)
+### [x] Task 3: Interactive Security Email Simulator (`src/components/cabinet/EmailDispatcherModal.tsx`)
 - **File**: `src/components/cabinet/EmailDispatcherModal.tsx`
 - **Actions**:
   1. Cyberpunk frosted glass mail window showing "Incoming Paradoxia Security Dispatch".
@@ -85,7 +85,7 @@ src/
 
 ---
 
-### Task 4: Auth Modal & TopUp Modal (`AuthModal.tsx` & `TopUpModal.tsx`)
+### [x] Task 4: Auth Modal & TopUp Modal (`AuthModal.tsx` & `TopUpModal.tsx`)
 - **Files**:
   - `src/components/cabinet/AuthModal.tsx`
   - `src/components/cabinet/TopUpModal.tsx`
@@ -96,7 +96,7 @@ src/
 
 ---
 
-### Task 5: Cabinet Tabs: Overview, Subscriptions & HWID Manager
+### [x] Task 5: Cabinet Tabs: Overview, Subscriptions & HWID Manager
 - **Files**:
   - `src/components/cabinet/OverviewTab.tsx`
   - `src/components/cabinet/SubscriptionsTab.tsx`
@@ -120,10 +120,11 @@ src/
 
 ---
 
-### Task 6: Cabinet Tabs: Wallet & Advanced Security Center
+### [x] Task 6: Cabinet Tabs: Wallet & Advanced Security Center
 - **Files**:
   - `src/components/cabinet/WalletTab.tsx`
   - `src/components/cabinet/SecuritySettingsTab.tsx`
+  - `src/components/cabinet/WalletTab.tsx`
 - **Actions**:
   1. `WalletTab`:
      - Big balance card with top-up button.
@@ -144,7 +145,7 @@ src/
 
 ---
 
-### Task 7: Master Cabinet Shell & Application Integration
+### [x] Task 7: Master Cabinet Shell & Application Integration
 - **Files**:
   - `src/components/cabinet/UserCabinetView.tsx`
   - `src/components/Navbar.tsx`
@@ -161,7 +162,7 @@ src/
 
 ---
 
-### Task 8: Build & Regression Verification
+### [x] Task 8: Build & Regression Verification
 - **Actions**:
   1. Run `npm run build` or Vite build check to verify zero TypeScript or linting errors.
   2. Verify all interactive flows: Demo login, voucher redemption (`PARADOXIA2026`), top-up, security action email dispatch, instant token verification, HWID reset, and session termination.
