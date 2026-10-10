@@ -391,25 +391,52 @@ class LicenseService {
   }
 
   async generateLicenses(durationDays: number, count: number, note: string): Promise<License[]> {
+    const formattedNote = note?.trim() || `Генерация администратором (${count} шт.)`;
+    const now = new Date().toISOString();
+
     if (isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase.rpc('admin_generate_licenses', {
-          p_count: count,
-          p_duration_days: durationDays,
-          p_note: note || `Генерация администратором (${count} шт.)`,
-          p_product: 'Paradoxia'
+      // 1. Прямой надежный INSERT в таблицу licenses Supabase
+      const clientGenerated: Omit<License, 'id'>[] = [];
+      for (let i = 0; i < count; i++) {
+        clientGenerated.push({
+          key: generateKeyString(),
+          product_name: 'Paradoxia',
+          duration_days: durationDays,
+          status: 'unused',
+          hwid: null,
+          note: formattedNote,
+          created_at: now,
+          activated_at: null,
+          expires_at: null,
         });
-        if (!error && data?.success) {
-          return await this.getLicenses();
-        }
-      } catch (err) {
-        console.warn('Supabase admin_generate_licenses failed, fallback to local', err);
+      }
+
+      const { data: insertedData, error: insertError } = await supabase
+        .from('licenses')
+        .insert(clientGenerated)
+        .select();
+
+      if (!insertError && insertedData && insertedData.length > 0) {
+        await this.logAudit('generate', {
+          count,
+          duration_days: durationDays,
+          note: formattedNote,
+          generated_keys: (insertedData as License[]).map((l) => l.key),
+        });
+        return insertedData as License[];
+      }
+
+      if (insertError) {
+        console.error('Supabase insert failed:', insertError);
+        // Если ошибка в Supabase, выбрасываем понятную ошибку, чтобы уведомить пользователя
+        throw new Error(
+          `Ошибка записи в Supabase: ${insertError.message} (код: ${insertError.code || 'RLS'}). Выполните SETUP_SUPABASE_DIRECT.sql в Supabase SQL Editor.`
+        );
       }
     }
 
+    // 2. Локальный режим (если Supabase не настроен)
     const newLicenses: License[] = [];
-    const now = new Date().toISOString();
-
     for (let i = 0; i < count; i++) {
       newLicenses.push({
         id: `lic-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -418,7 +445,7 @@ class LicenseService {
         duration_days: durationDays,
         status: 'unused',
         hwid: null,
-        note: note || `Генерация администратором (${count} шт.)`,
+        note: formattedNote,
         created_at: now,
         activated_at: null,
         expires_at: null,
@@ -432,7 +459,7 @@ class LicenseService {
     await this.logAudit('generate', {
       count,
       duration_days: durationDays,
-      note,
+      note: formattedNote,
       generated_keys: newLicenses.map((l) => l.key),
     });
 
@@ -448,7 +475,18 @@ class LicenseService {
           .eq('id', id)
           .select()
           .single();
-        if (!error && data) return data as License;
+
+        if (!error && data) {
+          await this.logAudit('status_change', { id, key: (data as License).key, updates });
+          return data as License;
+        } else if (error) {
+          console.error('Supabase updateLicense error:', error);
+          window.dispatchEvent(
+            new CustomEvent('supabase-error', {
+              detail: { message: `Supabase: ${error.message}` },
+            })
+          );
+        }
       } catch (err) {
         console.warn('Supabase updateLicense failed, fallback to local', err);
       }
@@ -462,22 +500,81 @@ class LicenseService {
     all[idx] = updatedLic;
     localStorage.setItem(STORAGE_KEYS.LICENSES, JSON.stringify(all));
 
+    await this.logAudit('status_change', { id, key: updatedLic.key, updates });
+
     return updatedLic;
+  }
+
+  async extendLicense(id: string, option: 7 | 30 | 'lifetime'): Promise<License> {
+    const licenses = await this.getLicenses();
+    const lic = licenses.find((l) => l.id === id);
+    if (!lic) throw new Error('Лицензия не найдена');
+
+    let updates: Partial<License> = {};
+    if (option === 'lifetime') {
+      updates = {
+        duration_days: 9999,
+        expires_at: null,
+      };
+    } else {
+      const baseTime = lic.expires_at ? new Date(lic.expires_at).getTime() : Date.now();
+      const currentOrNow = Math.max(baseTime, Date.now());
+      const nextExpiration = new Date(currentOrNow + option * 86400000).toISOString();
+      const newDuration = lic.duration_days >= 9999 ? option : lic.duration_days + option;
+      updates = {
+        duration_days: newDuration,
+        expires_at: nextExpiration,
+      };
+      if (lic.status === 'expired') {
+        updates.status = 'active';
+      }
+    }
+
+    return await this.updateLicense(id, updates);
   }
 
   async bulkUpdateLicenses(ids: string[], action: BulkAction): Promise<void> {
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase.rpc('admin_bulk_action', {
-          p_license_ids: ids,
-          p_action: action,
-          p_reason: 'Массовое действие в админ-панели'
-        });
-        if (!error && data?.success) {
+        let directSuccess = false;
+        if (action === 'freeze') {
+          const { error } = await supabase.from('licenses').update({ status: 'frozen' }).in('id', ids);
+          if (!error) directSuccess = true;
+        } else if (action === 'unfreeze') {
+          const { error } = await supabase.from('licenses').update({ status: 'active' }).in('id', ids);
+          if (!error) directSuccess = true;
+        } else if (action === 'ban') {
+          const { error } = await supabase.from('licenses').update({ status: 'banned' }).in('id', ids);
+          if (!error) directSuccess = true;
+        } else if (action === 'reset_hwid') {
+          const { error } = await supabase.from('licenses').update({ hwid: null }).in('id', ids);
+          if (!error) directSuccess = true;
+        } else if (action === 'delete') {
+          const { error } = await supabase.from('licenses').delete().in('id', ids);
+          if (!error) directSuccess = true;
+        } else if (action === 'extend_7d' || action === 'extend_30d') {
+          const days = action === 'extend_7d' ? 7 : 30;
+          const { data: currentLics } = await supabase.from('licenses').select('id, expires_at').in('id', ids);
+          if (currentLics) {
+            for (const lic of currentLics) {
+              const baseTime = lic.expires_at ? new Date(lic.expires_at).getTime() : Date.now();
+              const nextExp = new Date(Math.max(baseTime, Date.now()) + days * 86400000).toISOString();
+              await supabase.from('licenses').update({ expires_at: nextExp, status: 'active' }).eq('id', lic.id);
+            }
+            directSuccess = true;
+          }
+        }
+
+        if (directSuccess) {
+          await this.logAudit(action === 'delete' ? 'delete' : 'status_change', {
+            action,
+            affected_count: ids.length,
+            license_ids: ids,
+          });
           return;
         }
       } catch (err) {
-        console.warn('Supabase admin_bulk_action failed, fallback to local', err);
+        console.warn('Supabase bulk direct operation error:', err);
       }
     }
 
@@ -518,7 +615,15 @@ class LicenseService {
   async deleteLicense(id: string): Promise<void> {
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.from('licenses').delete().eq('id', id);
+        const { error } = await supabase.from('licenses').delete().eq('id', id);
+        if (error) {
+          console.error('Supabase deleteLicense error:', error);
+          window.dispatchEvent(
+            new CustomEvent('supabase-error', {
+              detail: { message: `Supabase Delete: ${error.message}` },
+            })
+          );
+        }
       } catch (err) {
         console.warn('Supabase deleteLicense failed, fallback to local', err);
       }
@@ -537,13 +642,29 @@ class LicenseService {
   async resetHWID(id: string): Promise<License> {
     if (isSupabaseConfigured && supabase) {
       try {
+        const { data, error } = await supabase
+          .from('licenses')
+          .update({ hwid: null })
+          .eq('id', id)
+          .select()
+          .single();
+
+        if (!error && data) {
+          await this.logAudit('reset_hwid', { id, key: (data as License).key });
+          return data as License;
+        }
+      } catch (err) {
+        console.warn('Supabase direct resetHWID failed, trying RPC:', err);
+      }
+
+      try {
         const { data, error } = await supabase.rpc('admin_reset_hwid', {
           p_license_id: id,
-          p_reason: 'Сброс HWID администратором'
+          p_reason: 'Сброс HWID администратором',
         });
         if (!error && data?.success) {
           const updated = await this.getLicenses();
-          const target = updated.find(l => l.id === id);
+          const target = updated.find((l) => l.id === id);
           if (target) return target;
         }
       } catch (err) {
@@ -555,6 +676,7 @@ class LicenseService {
     await this.logAudit('reset_hwid', { id, key: lic.key });
     return lic;
   }
+
 
   async heartbeat(key: string, hwid: string): Promise<{ alive: boolean; signature?: string }> {
     if (isSupabaseConfigured && supabase) {
@@ -573,6 +695,21 @@ class LicenseService {
 
   // --- SERVICE STATUS & SETTINGS ---
   async getServiceStatus(): Promise<ServiceStatusConfig> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'global_status')
+          .maybeSingle();
+
+        if (!error && data?.value) {
+          return data.value as ServiceStatusConfig;
+        }
+      } catch (err) {
+        console.warn('Supabase getServiceStatus failed, fallback to local', err);
+      }
+    }
     this.initStore();
     const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
     return raw ? JSON.parse(raw) : DEFAULT_SETTINGS;
@@ -585,6 +722,21 @@ class LicenseService {
       ...updates,
       last_updated: new Date().toISOString(),
     };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from('app_settings')
+          .upsert({
+            key: 'global_status',
+            value: next,
+            updated_at: new Date().toISOString(),
+          });
+      } catch (err) {
+        console.warn('Supabase updateServiceStatus failed, falling back to local', err);
+      }
+    }
+
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(next));
 
     await this.logAudit('status_change', {
@@ -599,50 +751,157 @@ class LicenseService {
 
   // --- AUDIT LOGS ---
   async getAuditLogs(): Promise<AuditLog[]> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('audit_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        if (!error && data) {
+          return data as AuditLog[];
+        }
+      } catch (err) {
+        console.warn('Supabase getAuditLogs failed, fallback to local', err);
+      }
+    }
     this.initStore();
     const raw = localStorage.getItem(STORAGE_KEYS.AUDIT);
     return raw ? JSON.parse(raw) : SEED_AUDIT;
   }
 
-  private async logAudit(action: AuditLog['action'], details: Record<string, unknown>): Promise<void> {
-    const current = await this.getAuditLogs();
-    const newEntry: AuditLog = {
-      id: `log-${Date.now()}`,
-      action,
-      details,
-      ip_or_source: 'Панель управления Paradoxia',
-      created_at: new Date().toISOString(),
-    };
-    const updated = [newEntry, ...current].slice(0, 50); // keep last 50
-    localStorage.setItem(STORAGE_KEYS.AUDIT, JSON.stringify(updated));
+  async logAudit(action: AuditLog['action'], details: Record<string, unknown>, ip_or_source?: string): Promise<void> {
+    const source = ip_or_source || 'Панель управления Paradoxia';
+    const now = new Date().toISOString();
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('audit_logs').insert({
+          action,
+          details,
+          ip_or_source: source,
+          created_at: now,
+        });
+      } catch (err) {
+        console.warn('Supabase logAudit insert failed', err);
+      }
+    }
+
+    try {
+      this.initStore();
+      const raw = localStorage.getItem(STORAGE_KEYS.AUDIT);
+      const current: AuditLog[] = raw ? JSON.parse(raw) : SEED_AUDIT;
+      const newEntry: AuditLog = {
+        id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        action,
+        details,
+        ip_or_source: source,
+        created_at: now,
+      };
+      const updated = [newEntry, ...current].slice(0, 100);
+      localStorage.setItem(STORAGE_KEYS.AUDIT, JSON.stringify(updated));
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  async clearAuditLogs(): Promise<void> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('audit_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      } catch (err) {
+        console.warn('Supabase clearAuditLogs failed', err);
+      }
+    }
+    localStorage.removeItem(STORAGE_KEYS.AUDIT);
   }
 
   // --- HWID BLACKLIST ---
   async getHWIDBlacklist(): Promise<HWIDBlacklistEntry[]> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('hwid_blacklist')
+          .select('*')
+          .order('banned_at', { ascending: false });
+
+        if (!error && data) {
+          return data as HWIDBlacklistEntry[];
+        }
+      } catch (err) {
+        console.warn('Supabase getHWIDBlacklist failed, fallback to local', err);
+      }
+    }
     this.initStore();
     const raw = localStorage.getItem(STORAGE_KEYS.HWID_BLACKLIST);
     return raw ? JSON.parse(raw) : SEED_HWID_BLACKLIST;
   }
 
-  async toggleHWIDBlacklist(hwid: string, reason?: string): Promise<void> {
-    const current = await this.getHWIDBlacklist();
-    const existingIdx = current.findIndex((b) => b.hwid === hwid);
+  async addToBlacklist(hwid: string, reason?: string): Promise<void> {
+    const sanitizedHwid = hwid.trim().toUpperCase();
+    const sanitizedReason = reason?.trim() || 'Блокировка администратором системы';
+    const now = new Date().toISOString();
 
-    if (existingIdx !== -1) {
-      // Remove from blacklist
-      current.splice(existingIdx, 1);
-    } else {
-      // Add to blacklist
-      current.unshift({
-        id: `hwid-bl-${Date.now()}`,
-        hwid,
-        reason: reason || 'Блокировка администратором системы',
-        banned_at: new Date().toISOString(),
-      });
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase
+          .from('hwid_blacklist')
+          .insert({
+            hwid: sanitizedHwid,
+            reason: sanitizedReason,
+            banned_at: now,
+          });
+        if (error) console.error('Supabase addToBlacklist error:', error);
+      } catch (err) {
+        console.warn('Supabase addToBlacklist failed', err);
+      }
     }
 
-    localStorage.setItem(STORAGE_KEYS.HWID_BLACKLIST, JSON.stringify(current));
-    await this.logAudit('hwid_blacklist', { hwid, action: existingIdx !== -1 ? 'unbanned' : 'banned', reason });
+    const current = await this.getHWIDBlacklist();
+    if (!current.some((b) => b.hwid === sanitizedHwid)) {
+      current.unshift({
+        id: `hwid-bl-${Date.now()}`,
+        hwid: sanitizedHwid,
+        reason: sanitizedReason,
+        banned_at: now,
+      });
+      localStorage.setItem(STORAGE_KEYS.HWID_BLACKLIST, JSON.stringify(current));
+    }
+
+    await this.logAudit('hwid_blacklist', { hwid: sanitizedHwid, action: 'banned', reason: sanitizedReason });
+  }
+
+  async removeFromBlacklist(hwid: string): Promise<void> {
+    const sanitizedHwid = hwid.trim().toUpperCase();
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase
+          .from('hwid_blacklist')
+          .delete()
+          .eq('hwid', sanitizedHwid);
+        if (error) console.error('Supabase removeFromBlacklist error:', error);
+      } catch (err) {
+        console.warn('Supabase removeFromBlacklist failed', err);
+      }
+    }
+
+    const current = await this.getHWIDBlacklist();
+    const filtered = current.filter((b) => b.hwid.toUpperCase() !== sanitizedHwid);
+    localStorage.setItem(STORAGE_KEYS.HWID_BLACKLIST, JSON.stringify(filtered));
+
+    await this.logAudit('hwid_blacklist', { hwid: sanitizedHwid, action: 'unbanned' });
+  }
+
+  async toggleHWIDBlacklist(hwid: string, reason?: string): Promise<void> {
+    const current = await this.getHWIDBlacklist();
+    const exists = current.some((b) => b.hwid.toUpperCase() === hwid.trim().toUpperCase());
+    if (exists) {
+      await this.removeFromBlacklist(hwid);
+    } else {
+      await this.addToBlacklist(hwid, reason);
+    }
   }
 }
 

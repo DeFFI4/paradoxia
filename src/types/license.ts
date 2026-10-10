@@ -2,6 +2,8 @@ export type LicenseStatus = 'unused' | 'active' | 'frozen' | 'expired' | 'banned
 
 export type ServiceStatus = 'UNDETECTED' | 'TESTING' | 'UPDATING' | 'MAINTENANCE';
 
+export type AdminTab = 'licenses' | 'status' | 'analytics' | 'blacklist' | 'audit';
+
 export interface License {
   id: string;
   key: string;
